@@ -19,7 +19,7 @@ class Params:
     min_state_count: int = 15
 
 def load_prices(source) -> pd.DataFrame:
-    raw = pd.read_csv(source)
+    raw = source.copy() if isinstance(source, pd.DataFrame) else pd.read_csv(source)
     date = next((c for c in ['Date','date'] if c in raw), None)
     close = next((c for c in ['TQQQ Close','Close Price','close','Close'] if c in raw), None)
     if not date or not close:
