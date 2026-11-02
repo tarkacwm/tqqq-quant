@@ -3,20 +3,58 @@ from dataclasses import asdict
 import pandas as pd
 import streamlit as st
 from research import Params,load_prices,features,evaluate,benchmarks,run_search
-st.set_page_config(page_title='TQQQ Research Foundation',layout='wide')
-st.title('TQQQ | Research Foundation')
-st.caption('Binary invested/cash research • close-of-day signals • next-session return attribution')
-source=st.file_uploader('Upload YCharts CSV (TQQQ Close or Close Price)',type=['csv'])
-if source is None:
-    st.info('Upload a CSV to begin. The repository includes data/sample_tqqq.csv for testing.')
-    st.stop()
+from datetime import date, timedelta
+from research import normalize_ticker, csv_tickers, load_ticker_csv, download_prices
+st.set_page_config(page_title='Multi-Ticker Research Foundation',layout='wide')
+st.title('Quant Research | Multi-Ticker Foundation')
+st.caption('Research any supported ticker • binary long/cash model • historical data validation')
+with st.sidebar:
+    st.header('Research universe')
+    mode=st.radio('Data source',['Online ticker download','Upload price CSV'],help='Online downloads use Yahoo Finance via yfinance. CSV upload works if online data is unavailable.')
+    if mode=='Online ticker download':
+        symbol_input=st.text_input('Ticker symbol','TQQQ',help='Examples: TQQQ, QQQ, SPY, SOXL, AAPL, BTC-USD')
+        start_date=st.date_input('Start date',date(2015,1,1),max_value=date.today())
+        end_date=st.date_input('End date (inclusive)',date.today(),max_value=date.today())
+        refresh=st.button('Load / refresh ticker data',type='primary')
+    else:
+        source=st.file_uploader('Upload daily price CSV',type=['csv'])
+        available=[]
+        if source is not None:
+            try: available=csv_tickers(source)
+            except Exception as exc: st.error(f'Could not inspect CSV: {exc}')
+        if available:
+            symbol_input=st.selectbox('Ticker in CSV',available)
+        else:
+            symbol_input=st.text_input('Ticker label for this CSV','TQQQ')
+        refresh=False
 try:
-    raw=load_prices(source);base=features(raw)
-except Exception as e:
-    st.error(str(e));st.stop()
-st.success(f'{len(raw):,} rows • {raw.date.iloc[0].date()} to {raw.date.iloc[-1].date()}')
+    symbol=normalize_ticker(symbol_input)
+    if mode=='Online ticker download':
+        if start_date>=end_date: raise ValueError('Start date must precede end date.')
+        key=(symbol,str(start_date),str(end_date))
+        if refresh or st.session_state.get('price_key')!=key:
+            with st.spinner(f'Downloading adjusted daily history for {symbol}...'):
+                st.session_state['price_data']=download_prices(symbol,str(start_date),str(end_date+timedelta(days=1)))
+                st.session_state['price_key']=key
+                st.session_state.pop('results',None)
+        raw=st.session_state['price_data']
+    else:
+        if source is None:
+            st.info('Upload a CSV or select Online ticker download to begin.')
+            st.stop()
+        raw=load_ticker_csv(source,symbol if available else None)
+        upload_key=(source.name,source.size,symbol)
+        if st.session_state.get('price_key')!=upload_key:
+            st.session_state.pop('results',None)
+            st.session_state['price_key']=upload_key
+    base=features(raw)
+except Exception as exc:
+    st.error(f'Data load failed: {exc}')
+    st.stop()
+st.success(f'{symbol} • {len(raw):,} rows • {raw.date.iloc[0].date()} to {raw.date.iloc[-1].date()}')
+st.warning('The current thresholds were designed around TQQQ. Applying them to other assets is exploratory and requires asset-specific calibration. Cross-asset leadership is unavailable unless your CSV includes QQQ Close and SOXX Close.')
 if not {'qqq_close','soxx_close'}.issubset(raw.columns):
-    st.warning('QQQ/SOXX prices are missing. Leadership is UNKNOWN and the constructive score loses one possible point. Results are not directly comparable to a full cross-asset dataset.')
+    st.info('QQQ/SOXX leadership is UNKNOWN for this dataset. The constructive score loses one possible point; do not compare directly with runs using full cross-asset inputs.')
 with st.sidebar:
     st.header('Research assumptions')
     fee=st.number_input('Cost per position change (bps)',0.,50.,2.,.5)
@@ -31,7 +69,7 @@ with t1:
     st.subheader('Baseline and benchmarks')
     st.dataframe(comparison.style.format('{:.2%}',subset=['cagr','max_drawdown','volatility','total_return']).format('{:.2f}',subset=['sharpe']),use_container_width=True)
     st.line_chart(bt.set_index('date')[['strategy_equity','buyhold_equity']])
-    st.metric('Latest target (next session)', 'INVESTED' if bt.target_position.iloc[-1] else 'CASH')
+    st.metric(f'{symbol} latest target (next session)', 'INVESTED' if bt.target_position.iloc[-1] else 'CASH')
     st.caption(f"Latest state: {bt.state_key.iloc[-1]} • historical state count: {int(bt.hist_count.iloc[-1])} • target is not the position attributed to today's return")
 with t2:
     st.write('Optimization uses the first 80% of dates only. The final 20% is an untouched chronological holdout during trial selection.')
@@ -46,7 +84,7 @@ with t2:
     if 'results' in st.session_state:
         st.subheader('Optimization results')
         st.dataframe(st.session_state['results'],use_container_width=True)
-        st.download_button('Download trials CSV',st.session_state['results'].to_csv(index=False),'optuna_trials.csv','text/csv')
+        st.download_button('Download trials CSV',st.session_state['results'].to_csv(index=False),f'{symbol}_optuna_trials.csv','text/csv')
         st.subheader('Best training configuration')
         st.json(st.session_state['best'])
         st.subheader('Untouched holdout report')

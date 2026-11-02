@@ -18,3 +18,25 @@ A GitHub/Streamlit Community Cloud-ready research app. The legacy pipeline is re
 - The optimizer's max drawdown constraint is a training constraint, not a guarantee. Optuna objective may select a penalized candidate if none pass.
 - Transaction costs are simplified, with per-change bps. Cash interest defaults to zero. Source data must be split-adjusted and validated separately.
 - No broker execution or live signal automation is included.
+
+## Multi-ticker research (new)
+
+The Streamlit sidebar supports **Online ticker download** (Yahoo Finance through
+`yfinance`) for TQQQ, QQQ, SPY, SOXL, individual stocks, and supported crypto
+symbols, plus **Upload price CSV**. Enter a ticker and date range, then load data.
+Online downloads use auto-adjusted daily close prices; Yahoo data availability,
+licensing and adjustment conventions may differ from YCharts. Internet access is
+required for online downloads. The app caches the most recent downloaded symbol
+in its session and clears prior optimization results when the selected dataset
+changes.
+
+CSV uploads support a single asset (`Date` plus `Close`, `Close Price`, `Adj Close`
+or `TQQQ Close`) or long-form multiple assets (`Date`, `Ticker`, `Close`). The
+selected ticker is filtered before features are calculated. For full leadership
+features, include `QQQ Close` and `SOXX Close` columns in the selected asset's CSV.
+
+**Important:** Strategy thresholds and shock/crash levels were developed for
+leveraged TQQQ. Other tickers can be researched, but results are exploratory;
+optimize and validate per instrument. The current benchmark is the *selected
+asset*, not TQQQ. Online price data does not automatically include cross-asset
+QQQ/SOXX inputs. Optimization results are not portable between assets.
